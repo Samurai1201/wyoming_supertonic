@@ -30,7 +30,7 @@ class SupertonicEngine:
         steps: int = 5,
         speed: float = 1.0,
         model_path: str = None,
-        crop_silence_ms: int = 350,
+        crop_silence_ms: int = 300,
     ) -> None:
         """
         Initialize the Supertonic TTS engine configuration.
@@ -46,7 +46,7 @@ class SupertonicEngine:
         self.model_path = model_path
         self.crop_silence_ms = crop_silence_ms
         self.tts = None
-        self.sample_rate = 44100  # V3 defaults to 44.1kHz output
+        self.sample_rate = 44100
 
         # Official V3 voices
         self.available_voices =[
@@ -101,6 +101,22 @@ class SupertonicEngine:
                 f"Error: {exc}"
             ) from exc
 
+    def _sanitize_text(self, text: str) -> str:
+        """
+        Removes invisible control characters and unsupported Unicode symbols
+        that cause the TTS library to crash.
+        """
+        # \xad - Soft Hyphen
+        # \u200b - Zero Width Space
+        # \ufeff - Byte Order Mark (BOM)
+        # \u200c / \u200d - Zero Width Joiner/Non-Joiner
+        chars_to_remove = ["\xad", "\u200b", "\ufeff", "\u200c", "\u200d"]
+        for char in chars_to_remove:
+            text = text.replace(char, "")
+        
+        # Replace multiple spaces with one
+        return " ".join(text.split())
+
     def synthesize(
         self, text: str, voice_name: str, lang_code: str = "en"
     ) -> Tuple[bytes, int]:
@@ -122,6 +138,8 @@ class SupertonicEngine:
         """
         if self.tts is None:
             raise RuntimeError("Engine not loaded! Call load() first.")
+
+        text = self._sanitize_text(text)
 
         # 1. Check and process language code
         if not lang_code:

@@ -20,7 +20,7 @@ async def main() -> None:
     parser.add_argument("--uri", default="tcp://0.0.0.0:10209", help="Server URI")
     parser.add_argument("--data-dir", default=None, help="Path to models (optional for V3)")
     parser.add_argument("--language", default="en", help="Default voice language")
-    parser.add_argument("--crop-silence", type=int, default=390, help="Crop silence from start and end")
+    parser.add_argument("--crop-silence", type=int, default=300, help="Crop silence from start and end")
     parser.add_argument("--steps", type=int, default=5, help="Denoising steps")
     parser.add_argument("--speed", type=float, default=1.0, help="Speech speed")
     parser.add_argument("--threads", type=int, default=4, help="CPU threads")
