@@ -18,7 +18,8 @@ _LOGGER = logging.getLogger(__name__)
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--uri", default="tcp://0.0.0.0:10209", help="Server URI")
-    parser.add_argument("--data-dir", required=True, help="Path to folder containing 'onnx' and 'voice_styles'")
+    # data-dir больше не является обязательным
+    parser.add_argument("--data-dir", default=None, help="Path to models (optional in V3, handled by auto_download)")
     parser.add_argument("--language", default="en", help="Default voice language")
     parser.add_argument("--steps", type=int, default=5, help="Denoising steps")
     parser.add_argument("--speed", type=float, default=1.0, help="Speech speed")
@@ -35,7 +36,7 @@ async def main() -> None:
     os.environ["SUPERTONIC_INTRA_OP_THREADS"] = str(args.threads)
     os.environ["SUPERTONIC_INTER_OP_THREADS"] = str(max(1, args.threads // 2))
 
-    _LOGGER.info("Initializing Supertonic V2 standalone engine...")
+    _LOGGER.info("Initializing Supertonic V3 engine...")
     
     engine = SupertonicEngine(steps=args.steps, speed=args.speed, model_path=args.data_dir)
     
@@ -45,8 +46,15 @@ async def main() -> None:
         _LOGGER.fatal(f"Load error: {e}")
         return
 
-    wyoming_voices = []
-    supported_languages = ["en", "ko", "es", "pt", "fr"]
+    wyoming_voices =[]
+    
+    # 31 язык (V3)
+    supported_languages =[
+        "en", "ko", "ja", "ar", "bg", "cs", "da", "de", 
+        "el", "es", "et", "fi", "fr", "hi", "hr", "hu", 
+        "id", "it", "lt", "lv", "nl", "pl", "pt", "ro", 
+        "ru", "sk", "sl", "sv", "tr", "uk", "vi"
+    ]
     
     for voice_id in engine.available_voices:
         readable_name = voice_id
@@ -59,7 +67,7 @@ async def main() -> None:
             TtsVoice(
                 name=voice_id,
                 description=readable_name,
-                attribution=Attribution(name="Supertone", url="https://github.com/supertone-inc/supertonic-py"),
+                attribution=Attribution(name="Supertone", url="https://github.com/supertone-inc/supertonic"),
                 installed=True,
                 version=__version__,
                 languages=supported_languages,
@@ -70,8 +78,8 @@ async def main() -> None:
         tts=[
             TtsProgram(
                 name="Supertonic",
-                description="Supertonic V2 Local",
-                attribution=Attribution(name="Supertone", url="https://huggingface.co/Supertone/supertonic"),
+                description="Supertonic V3",
+                attribution=Attribution(name="Supertone", url="https://huggingface.co/Supertone/supertonic-3"),
                 installed=True,
                 version=__version__,
                 supports_synthesize_streaming=not args.no_streaming,
@@ -100,7 +108,6 @@ async def main() -> None:
         await server.run(handler_factory)
     except KeyboardInterrupt:
         pass
-
 
 def run():
     try:

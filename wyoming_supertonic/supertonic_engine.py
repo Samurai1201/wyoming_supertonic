@@ -1,104 +1,112 @@
 import logging
 import numpy as np
 import os
-import sys
-
-# Add current directory to path to find helper.py
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+import inspect
 
 _LOGGER = logging.getLogger(__name__)
 
+# Attempt to import language-specific text normalizers.
+# If dependencies (e.g., num2words) are missing, the server will not crash,
+# but will proceed without text normalization.
+try:
+    from .ru_norm import RussianTextNormalizer
+    RU_NORMALIZER_AVAILABLE = True
+except ImportError as e:
+    _LOGGER.warning(f"Russian text normalizer won't be available: {e}")
+    RU_NORMALIZER_AVAILABLE = False
+
+
 class SupertonicEngine:
-    def __init__(self, steps: int = 5, speed: float = 1.05, model_path: str = None):
+    def __init__(self, steps: int = 5, speed: float = 1.0, model_path: str = None):
         self.steps = steps
         self.speed = speed
         self.model_path = model_path
         self.tts = None
-        self.sample_rate = 44100 
-        self.available_voices = []
+        self.sample_rate = 44100  # V3 defaults to 44.1kHz output
         
-        self._load_style_func = None
+        # Official V3 voices
+        self.available_voices =["M1", "M2", "M3", "M4", "M5", "F1", "F2", "F3", "F4", "F5"]
         
-        # Supported V2 model languages
-        self.supported_langs = ["en", "ko", "es", "pt", "fr"]
+        # Full list of supported V3 languages
+        self.supported_langs =[
+            "en", "ko", "ja", "ar", "bg", "cs", "da", "de", 
+            "el", "es", "et", "fi", "fr", "hi", "hr", "hu", 
+            "id", "it", "lt", "lv", "nl", "pl", "pt", "ro", 
+            "ru", "sk", "sl", "sv", "tr", "uk", "vi"
+        ]
+
+        # Normalizer registry by language (extensible architecture)
+        self.normalizers = {}
+        
+        if RU_NORMALIZER_AVAILABLE:
+            self.normalizers["ru"] = RussianTextNormalizer()
+            # Future normalizers can be added here, e.g.:
+            # self.normalizers["es"] = SpanishTextNormalizer()
 
     def load(self):
-        """Load via local helper.py"""
-        _LOGGER.info("Loading engine (standalone mode)...")
+        """Load via the official V3 library"""
+        _LOGGER.info("Loading engine (Supertonic V3)...")
         
         try:
-            from helper import load_text_to_speech, load_voice_style
-            self._load_style_func = load_voice_style
-            
-            # Locate folders
-            base_dir = self.model_path if self.model_path else os.getcwd()
-            onnx_dir = os.path.join(base_dir, "onnx")
-            styles_dir = os.path.join(base_dir, "voice_styles")
-            
-            # Check alternative paths
-            if not os.path.exists(onnx_dir):
-                if os.path.exists(os.path.join(base_dir, "assets", "onnx")):
-                    onnx_dir = os.path.join(base_dir, "assets", "onnx")
-                    styles_dir = os.path.join(base_dir, "assets", "voice_styles")
-                else:
-                    raise FileNotFoundError(f"Folder 'onnx' not found in {base_dir}")
-
-            _LOGGER.info(f"Loading ONNX models from: {onnx_dir}")
-            
-            # Load (use_gpu=False)
-            self.tts = load_text_to_speech(onnx_dir, use_gpu=False)
-            
-            if hasattr(self.tts, 'sample_rate'):
-                self.sample_rate = self.tts.sample_rate
-            
-            # Scan voices
-            if os.path.exists(styles_dir):
-                self.available_voices = sorted([f.replace(".json", "") for f in os.listdir(styles_dir) if f.endswith(".json")])
-                self.styles_dir = styles_dir
-            else:
-                _LOGGER.warning("Styles folder not found")
-                self.available_voices = ["M1"]
-                self.styles_dir = None
-
+            from supertonic import TTS
+            _LOGGER.info("Initializing TTS (Models and presets will auto-download if missing)...")
+            self.tts = TTS(auto_download=True)
             _LOGGER.info(f"Engine ready. Rate: {self.sample_rate}Hz. Voices: {len(self.available_voices)}")
             
         except ImportError as e:
-            raise RuntimeError(f"helper.py not found! {e}")
+            raise RuntimeError(f"supertonic package not found! Please run 'pip install supertonic'. Error: {e}")
 
     def synthesize(self, text: str, voice_name: str, lang_code: str = "en") -> tuple[bytes, int]:
         if self.tts is None:
             raise RuntimeError("Engine not loaded!")
 
-        # 1. Process language
-        if not lang_code: lang_code = "en"
+        # 1. Check and process language code
+        if not lang_code: 
+            lang_code = "en"
         short_lang = lang_code[:2].lower()
         if short_lang not in self.supported_langs:
             short_lang = "en"
 
-        # 2. Load style
-        style_path = os.path.join(self.styles_dir, f"{voice_name}.json")
-        style = self._load_style_func([style_path])
+        # 2. Text normalization for specific language (if registered)
+        if short_lang in self.normalizers:
+            original_text = text
+            text = self.normalizers[short_lang].normalize(text)
+            if original_text != text:
+                _LOGGER.debug(f"[{short_lang}] Normalized text: '{original_text}' -> '{text}'")
 
-        # 3. Synthesize via helper
+        # 3. Get voice style (preset)
+        try:
+            style = self.tts.get_voice_style(voice_name=voice_name)
+        except Exception as e:
+            _LOGGER.warning(f"Voice style '{voice_name}' not found, defaulting to M1. ({e})")
+            style = self.tts.get_voice_style(voice_name="M1")
+
+        # 4. Synthesize via library
         try:
             _LOGGER.debug(f"Synthesizing: (Voice: {voice_name}, Lang: {short_lang}, Speed: {self.speed}, Steps: {self.steps})")
             
-            wav, duration = self.tts(
-                text,       
-                short_lang, 
-                style, 
-                self.steps, 
-                self.speed
-            )
+            kwargs = {"lang": short_lang}
+            sig = inspect.signature(self.tts.synthesize)
             
-            # Remove batch dimensions (1, N) -> (N,)
-            wav = wav.squeeze()
+            # Safely pass arguments depending on the library's exact API
+            if "speed" in sig.parameters:
+                kwargs["speed"] = self.speed
+            if "total_step" in sig.parameters:
+                kwargs["total_step"] = self.steps
+            elif "total_steps" in sig.parameters:
+                kwargs["total_steps"] = self.steps
+                
+            wav, duration = self.tts.synthesize(text, voice_style=style, **kwargs)
+            
+            # Remove batch dimensions, e.g., (1, N) -> (N,)
+            if hasattr(wav, "squeeze"):
+                wav = wav.squeeze()
             
         except Exception as e:
-            _LOGGER.error(f"Synthesis error in helper: {e}")
+            _LOGGER.error(f"Synthesis error in library: {e}")
             raise e
 
-        # 4. Simple conversion to int16 without trimming
+        # 5. Convert float32[-1.0, 1.0] array to int16 PCM format for Wyoming
         audio_int16 = (wav * 32767).clip(-32768, 32767).astype(np.int16)
         
         return audio_int16.tobytes(), self.sample_rate
