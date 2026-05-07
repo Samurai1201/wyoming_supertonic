@@ -5,6 +5,8 @@ description = "Wyoming Server for Supertonic Engine"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
+    "supertonic",
+    "num2words",
     "wyoming",
     "sentence-stream",
     "numpy",
