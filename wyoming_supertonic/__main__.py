@@ -18,9 +18,9 @@ _LOGGER = logging.getLogger(__name__)
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--uri", default="tcp://0.0.0.0:10209", help="Server URI")
-    # data-dir больше не является обязательным
-    parser.add_argument("--data-dir", default=None, help="Path to models (optional in V3, handled by auto_download)")
+    parser.add_argument("--data-dir", default=None, help="Path to models (optional for V3)")
     parser.add_argument("--language", default="en", help="Default voice language")
+    parser.add_argument("--crop-silence", type=int, default=390, help="Crop silence from start and end")
     parser.add_argument("--steps", type=int, default=5, help="Denoising steps")
     parser.add_argument("--speed", type=float, default=1.0, help="Speech speed")
     parser.add_argument("--threads", type=int, default=4, help="CPU threads")
@@ -38,7 +38,12 @@ async def main() -> None:
 
     _LOGGER.info("Initializing Supertonic V3 engine...")
     
-    engine = SupertonicEngine(steps=args.steps, speed=args.speed, model_path=args.data_dir)
+    engine = SupertonicEngine(
+        steps=args.steps, 
+        speed=args.speed, 
+        model_path=args.data_dir,
+        crop_silence_ms=args.crop_silence
+    )
     
     try:
         await asyncio.to_thread(engine.load)
@@ -48,7 +53,6 @@ async def main() -> None:
 
     wyoming_voices =[]
     
-    # 31 язык (V3)
     supported_languages =[
         "en", "ko", "ja", "ar", "bg", "cs", "da", "de", 
         "el", "es", "et", "fi", "fr", "hi", "hr", "hu", 
