@@ -18,12 +18,6 @@ except ImportError as e:
 class SupertonicEngine:
     """
     Main TTS engine class for Supertone V3.
-    
-    Features: 
-    - Lazy style caching to save memory.
-    - Global text sanitization to prevent library crashes.
-    - Automatic silence cropping for smooth book reading.
-    - Language-specific text normalization (Russian numbers & stress).
     """
 
     def __init__(
@@ -31,7 +25,7 @@ class SupertonicEngine:
         steps: int = 5,
         speed: float = 1.0,
         model_path: str = None,
-        crop_silence_ms: int = 350,
+        crop_silence_ms: int = 300,
     ) -> None:
         """
         Initialize engine settings.
