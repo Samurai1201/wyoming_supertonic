@@ -55,6 +55,7 @@ The initial synthesized audio for each sentence is framed by silence on both sid
 ```
 git clone https://github.com/mitrokun/wyoming_supertonic.git
 cd wyoming_supertonic
-UV_CACHE_DIR=.uv_cache uv run -m wyoming_supertonic  --uri 'tcp://0.0.0.0:10209'
+uv --cache-dir .uv_cache run -m wyoming_supertonic --uri 'tcp://0.0.0.0:10209'
 ```
+for auto-stress for the Russian language, add the extra parameter `--extra ru` (additional libraries will be downloaded).
 
