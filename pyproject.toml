@@ -3,7 +3,7 @@ name = "wyoming-supertonic"
 version = "1.0.0"
 description = "Wyoming Server for Supertonic Engine"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "supertonic",
     "num2words",
@@ -12,6 +12,20 @@ dependencies = [
     "numpy",
     "onnxruntime",
 ]
+
+[project.optional-dependencies]
+ru = [
+    "silero-stress",
+    "torch",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["wyoming_supertonic"]
