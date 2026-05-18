@@ -1,0 +1,122 @@
+"""German text normalizer for Wyoming-Supertonic.
+
+Converts digits, decimals, clock times, percentages and degrees into spoken
+German words so a fast local TTS that cannot handle "," "." ":" inside
+numbers produces correct speech.
+
+Design notes:
+- fail-open: any internal error returns the ORIGINAL text unmodified, so a
+  normalizer bug can never make the assistant go mute (it just speaks the
+  un-normalized text instead).
+- expression tags like <laugh> are preserved (not touched / not stripped),
+  per ADD_NORM.md.
+- scope is deliberately limited to what the voice assistant actually emits
+  (time of day, temperatures, percentages, counts). mm:ss durations are NOT
+  disambiguated from HH:MM clock times - see _times().
+"""
+
+import logging
+import re
+
+from num2words import num2words
+
+log = logging.getLogger(__name__)
+
+
+class GermanTextNormalizer:
+
+    _TAGS_PATTERN = re.compile(r"(<[a-zA-Z/]+>)")
+
+    # Quotes / markup noise to drop. Keep . , : - ° % < > for processing.
+    _chars_to_delete = "=#$“”„«»*\"‘’‚`"
+
+    _emoji_pattern = re.compile(
+        "["
+        "\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF"
+        "\U0001F1E0-\U0001F1FF☀-⛿✀-➿\U0001F900-\U0001F9FF"
+        "‍️"
+        "]+",
+        flags=re.UNICODE,
+    )
+
+    # HH:MM 24h clock (hour 0-23, minute 00-59), optional trailing "Uhr"
+    _TIME_PATTERN = re.compile(r"\b([01]?\d|2[0-3]):([0-5]\d)(\s*Uhr)?\b")
+    _PERCENT_PATTERN = re.compile(r"(\d+(?:[.,]\d+)?)\s*%")
+    _DEG_C_PATTERN = re.compile(r"(\d+(?:[.,]\d+)?)\s*°\s*C\b")
+    _DEG_PATTERN = re.compile(r"(\d+(?:[.,]\d+)?)\s*°")
+    _NUM_PATTERN = re.compile(r"\d+(?:[.,]\d+)?")
+
+    def __init__(self) -> None:
+        self._del_table = str.maketrans("", "", self._chars_to_delete)
+
+    def normalize(self, text: str) -> str:
+        """Public entry point. Never raises - falls back to original text."""
+        try:
+            return self._normalize(text)
+        except Exception as e:  # fail-open
+            log.warning("de_norm failed, passing text through unmodified: %s", e)
+            return text
+
+    # --- internals -----------------------------------------------------
+
+    def _normalize(self, text: str) -> str:
+        if not text or not text.strip():
+            return text
+
+        parts = self._TAGS_PATTERN.split(text)
+        out = []
+        for part in parts:
+            if not part:
+                continue
+            if self._TAGS_PATTERN.match(part):
+                out.append(part)  # preserve <tag> verbatim
+            else:
+                out.append(self._pipeline(part))
+        return re.sub(r"\s+", " ", " ".join(out)).strip()
+
+    def _pipeline(self, text: str) -> str:
+        if not text.strip():
+            return text
+        text = self._emoji_pattern.sub("", text)
+        text = text.translate(self._del_table)
+        text = text.replace("\n", " ").replace("\t", " ")
+        text = self._TIME_PATTERN.sub(self._repl_time, text)
+        text = self._PERCENT_PATTERN.sub(self._repl_percent, text)
+        text = self._DEG_C_PATTERN.sub(self._repl_deg, text)
+        text = self._DEG_PATTERN.sub(self._repl_deg, text)
+        text = self._NUM_PATTERN.sub(self._repl_num, text)
+        return re.sub(r"[ ]{2,}", " ", text).strip()
+
+    @staticmethod
+    def _say_int(value) -> str:
+        return num2words(int(value), lang="de")
+
+    def _num_token(self, s: str) -> str:
+        s = s.replace(",", ".")
+        if "." in s:
+            a, b = s.split(".", 1)
+            if a and b:
+                if len(b) == 1:
+                    frac = self._say_int(b)
+                else:
+                    frac = " ".join(self._say_int(d) for d in b)
+                return f"{self._say_int(a)} Komma {frac}"
+            return self._say_int(s.replace(".", "") or "0")
+        return self._say_int(s)
+
+    def _repl_time(self, m: "re.Match") -> str:
+        h, mm = int(m.group(1)), int(m.group(2))
+        if not (0 <= h <= 23 and 0 <= mm <= 59):
+            return m.group(0)
+        if mm == 0:
+            return f"{self._say_int(h)} Uhr"
+        return f"{self._say_int(h)} Uhr {self._say_int(mm)}"
+
+    def _repl_percent(self, m: "re.Match") -> str:
+        return f" {self._num_token(m.group(1))} Prozent "
+
+    def _repl_deg(self, m: "re.Match") -> str:
+        return f" {self._num_token(m.group(1))} Grad "
+
+    def _repl_num(self, m: "re.Match") -> str:
+        return self._num_token(m.group(0))

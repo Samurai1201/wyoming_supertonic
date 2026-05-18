@@ -14,6 +14,13 @@ except ImportError as e:
     _LOGGER.warning("Russian text normalizer won't be available: %s", e)
     RU_NORMALIZER_AVAILABLE = False
 
+try:
+    from .de_norm import GermanTextNormalizer
+    DE_NORMALIZER_AVAILABLE = True
+except ImportError as e:
+    _LOGGER.warning("German text normalizer won't be available: %s", e)
+    DE_NORMALIZER_AVAILABLE = False
+
 
 class SupertonicEngine:
     """
@@ -65,6 +72,8 @@ class SupertonicEngine:
         if RU_NORMALIZER_AVAILABLE:
             # Note: RussianTextNormalizer handles Silero Stress internally
             self.normalizers["ru"] = RussianTextNormalizer()
+        if DE_NORMALIZER_AVAILABLE:
+            self.normalizers["de"] = GermanTextNormalizer()
 
     def load(self) -> None:
         """
