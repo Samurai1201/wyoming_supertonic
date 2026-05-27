@@ -12,8 +12,12 @@ Your class must implement a `normalize` method. It is highly recommended to use 
 
 **Template (`de_norm.py`):**
 ```python
+import logging
 import re
 from num2words import num2words
+
+# Initialize logger to report normalization errors safely
+logger = logging.getLogger(__name__)
 
 class GermanTextNormalizer:
     def __init__(self):
@@ -25,50 +29,43 @@ class GermanTextNormalizer:
         if not text.strip():
             return text
             
-        # 1. Basic cleanup
-        text = text.translate(self._translation_table)
-        
-        # 2. Convert numbers to words (example)
-        text = re.sub(r'\b\d+\b', lambda m: num2words(int(m.group(0)), lang='de'), text)
-        
-        # 3. Final cleanup (ensure multiple spaces are removed)
-        return " ".join(text.split())
+        try:
+            # 1. Basic cleanup
+            cleaned_text = text.translate(self._translation_table)
+            
+            # 2. Convert numbers to words (example)
+            cleaned_text = re.sub(
+                r'\b\d+\b', 
+                lambda m: num2words(int(m.group(0)), lang='de'), 
+                cleaned_text
+            )
+            
+            # 3. Final cleanup (ensure multiple spaces are removed)
+            return " ".join(cleaned_text.split())
+            
+        except Exception as e:
+            # Fail-open: if anything fails, log a warning and return original text
+            logger.warning("Normalization failed, falling back to original text: %s", e)
+            return text
 ```
 
 ---
 
 ### Step 2: Register the Normalizer in `supertonic_engine.py`
 
-You need to tell the engine to use your new script when the language code matches.
 
-#### 1. Import the class
-At the top of `supertonic_engine.py`, add an import block with a safety check:
+The engine uses a dynamic registry to load normalizers. You only need to add a single line to tell the engine about your new script.
 
+Open `supertonic_engine.py` and locate the `NORMALIZERS_REGISTRY` dictionary near the top of the file. Add your language code, the module name (the file name without `.py`, preceded by a dot), and your class name.
+
+**Example:**
 ```python
-try:
-    from .de_norm import GermanTextNormalizer
-    DE_NORMALIZER_AVAILABLE = True
-except ImportError:
-    DE_NORMALIZER_AVAILABLE = False
+# Registry of available normalizers: "lang_code": ("module_name", "ClassName")
+NORMALIZERS_REGISTRY = {
+    "ru": (".ru_norm", "RussianTextNormalizer"),
+    "de": (".de_norm", "GermanTextNormalizer"),  # <-- Add your new language here
+}
 ```
-
-#### 2. Initialize in `__init__`
-Inside the `__init__` method of `SupertonicEngine`, add your new normalizer to the `self.normalizers` dictionary:
-
-```python
-def __init__(self, ...):
-    # ... existing code ...
-    self.normalizers = {}
-
-    # Register Russian
-    if RU_NORMALIZER_AVAILABLE:
-        self.normalizers["ru"] = RussianTextNormalizer()
-
-    # Register German (New)
-    if DE_NORMALIZER_AVAILABLE:
-        self.normalizers["de"] = GermanTextNormalizer()
-```
-
 ---
 
 ### Step 3: Test the Integration
