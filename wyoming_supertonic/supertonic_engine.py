@@ -1,3 +1,4 @@
+import importlib
 import inspect
 import logging
 from typing import Tuple
@@ -6,20 +7,12 @@ import numpy as np
 
 _LOGGER = logging.getLogger(__name__)
 
-# Attempt to import language-specific text normalizers.
-try:
-    from .ru_norm import RussianTextNormalizer
-    RU_NORMALIZER_AVAILABLE = True
-except ImportError as e:
-    _LOGGER.warning("Russian text normalizer won't be available: %s", e)
-    RU_NORMALIZER_AVAILABLE = False
-
-try:
-    from .de_norm import GermanTextNormalizer
-    DE_NORMALIZER_AVAILABLE = True
-except ImportError as e:
-    _LOGGER.warning("German text normalizer won't be available: %s", e)
-    DE_NORMALIZER_AVAILABLE = False
+# Registry of available normalizers: "lang_code": ("module_name", "ClassName")
+# To add a new language, simply add a new line to this dictionary.
+NORMALIZERS_REGISTRY = {
+    "ru": (".ru_norm", "RussianTextNormalizer"),
+    "de": (".de_norm", "GermanTextNormalizer"),
+}
 
 
 class SupertonicEngine:
@@ -67,13 +60,31 @@ class SupertonicEngine:
             "ru", "sk", "sl", "sv", "tr", "uk", "vi"
         ]
 
-        # Register normalizers
+        # Register normalizers dynamically
         self.normalizers = {}
-        if RU_NORMALIZER_AVAILABLE:
-            # Note: RussianTextNormalizer handles Silero Stress internally
-            self.normalizers["ru"] = RussianTextNormalizer()
-        if DE_NORMALIZER_AVAILABLE:
-            self.normalizers["de"] = GermanTextNormalizer()
+        self._load_normalizers()
+
+    def _load_normalizers(self) -> None:
+        """
+        Dynamically loads available text normalizers based on the registry.
+        Fails safely if a module's dependencies are missing.
+        """
+        for lang, (module_name, class_name) in NORMALIZERS_REGISTRY.items():
+            try:
+                module = importlib.import_module(module_name, package=__package__)
+                normalizer_class = getattr(module, class_name)
+                self.normalizers[lang] = normalizer_class()
+                _LOGGER.debug("[%s] Text normalizer loaded successfully.", lang)
+            except ImportError as exc:
+                _LOGGER.warning(
+                    "[%s] Text normalizer won't be available (missing dependency): %s", 
+                    lang, exc
+                )
+            except Exception as exc:
+                _LOGGER.error(
+                    "[%s] Failed to initialize normalizer: %s", 
+                    lang, exc
+                )
 
     def load(self) -> None:
         """

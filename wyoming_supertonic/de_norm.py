@@ -27,7 +27,7 @@ class GermanTextNormalizer:
 
     _TAGS_PATTERN = re.compile(r"(<[a-zA-Z/]+>)")
 
-    # Quotes / markup noise to drop. Keep . , : - ° % < > for processing.
+    # Characters to drop. Keeps . , : - ° % < > for processing.
     _chars_to_delete = "=#$“”„«»*\"‘’‚`"
 
     _emoji_pattern = re.compile(
@@ -41,10 +41,10 @@ class GermanTextNormalizer:
 
     # HH:MM 24h clock (hour 0-23, minute 00-59), optional trailing "Uhr"
     _TIME_PATTERN = re.compile(r"\b([01]?\d|2[0-3]):([0-5]\d)(\s*Uhr)?\b")
-    _PERCENT_PATTERN = re.compile(r"(\d+(?:[.,]\d+)?)\s*%")
-    _DEG_C_PATTERN = re.compile(r"(\d+(?:[.,]\d+)?)\s*°\s*C\b")
-    _DEG_PATTERN = re.compile(r"(\d+(?:[.,]\d+)?)\s*°")
-    _NUM_PATTERN = re.compile(r"\d+(?:[.,]\d+)?")
+    _PERCENT_PATTERN = re.compile(r"(-?\d+(?:[.,]\d+)*)\s*%")
+    _DEG_C_PATTERN = re.compile(r"(-?\d+(?:[.,]\d+)*)\s*°\s*C\b")
+    _DEG_PATTERN = re.compile(r"(-?\d+(?:[.,]\d+)*)\s*°")
+    _NUM_PATTERN = re.compile(r"(?:(?<=^)|(?<=\s))-\d+(?:[.,]\d+)*|\b\d+(?:[.,]\d+)*")
 
     def __init__(self) -> None:
         self._del_table = str.maketrans("", "", self._chars_to_delete)
@@ -53,7 +53,7 @@ class GermanTextNormalizer:
         """Public entry point. Never raises - falls back to original text."""
         try:
             return self._normalize(text)
-        except Exception as e:  # fail-open
+        except Exception as e:
             log.warning("de_norm failed, passing text through unmodified: %s", e)
             return text
 
@@ -92,7 +92,27 @@ class GermanTextNormalizer:
         return num2words(int(value), lang="de")
 
     def _num_token(self, s: str) -> str:
-        s = s.replace(",", ".")
+        # Handle negative sign
+        is_negative = s.startswith("-") or s.startswith("−")
+        if is_negative:
+            s = s[1:]
+
+        # Normalize delimiters (German vs English standards)
+        if "," in s:
+            # German standard: "1.000,5" -> remove dots, change comma to dot -> "1000.5"
+            s = s.replace(".", "").replace(",", ".")
+        elif "." in s:
+            # If there are multiple dots, they are thousands separators.
+            if s.count(".") > 1:
+                s = s.replace(".", "")
+            else:
+                # Single dot check: e.g., "1.000" vs "10.0"
+                # If there are exactly 3 digits after the dot and the integer part is not "0",
+                # it is highly likely a thousand separator in German.
+                parts = s.split(".")
+                if len(parts) == 2 and len(parts[1]) == 3 and parts[0] != "0":
+                    s = s.replace(".", "")
+
         if "." in s:
             a, b = s.split(".", 1)
             if a and b:
@@ -100,9 +120,13 @@ class GermanTextNormalizer:
                     frac = self._say_int(b)
                 else:
                     frac = " ".join(self._say_int(d) for d in b)
-                return f"{self._say_int(a)} Komma {frac}"
-            return self._say_int(s.replace(".", "") or "0")
-        return self._say_int(s)
+                result = f"{self._say_int(a)} Komma {frac}"
+            else:
+                result = self._say_int(s.replace(".", "") or "0")
+        else:
+            result = self._say_int(s)
+
+        return f"minus {result}" if is_negative else result
 
     def _repl_time(self, m: "re.Match") -> str:
         h, mm = int(m.group(1)), int(m.group(2))
