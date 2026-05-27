@@ -34,7 +34,7 @@ class RussianTextNormalizer:
 
     _FINAL_CLEANUP_PATTERN = re.compile(r'[^а-яА-ЯёЁa-zA-Z?!.,<>\/\+\u0300-\u036f -]+')
 
-    _TAGS_PATTERN = re.compile(r'(<[a-zA-Z\/]+>)')
+    _TAGS_PATTERN = re.compile(r'(<[a-z]+>)')
 
     def __init__(self):
         """
@@ -56,19 +56,28 @@ class RussianTextNormalizer:
             )
 
     def normalize(self, text: str) -> str:
-        parts = self._TAGS_PATTERN.split(text)
-        normalized_parts =[]
+        """
+        Публичная точка входа. Никогда не вызывает исключений — 
+        при любой ошибке возвращает исходный текст без изменений.
+        """
+        try:
+            parts = self._TAGS_PATTERN.split(text)
+            normalized_parts = []
 
-        for part in parts:
-            if not part:
-                continue
-            if self._TAGS_PATTERN.match(part):
-                normalized_parts.append(part)
-            else:
-                normalized_parts.append(self._normalize_pipeline(part))
+            for part in parts:
+                if not part:
+                    continue
+                if self._TAGS_PATTERN.match(part):
+                    normalized_parts.append(part)
+                else:
+                    normalized_parts.append(self._normalize_pipeline(part))
 
-        result = " ".join(normalized_parts)
-        return re.sub(r'\s+', ' ', result).strip()
+            result = " ".join(normalized_parts)
+            return re.sub(r'\s+', ' ', result).strip()
+            
+        except Exception as e:
+            log.warning("ru_norm failed, passing text through unmodified: %s", e)
+            return text
 
     def _normalize_pipeline(self, text: str) -> str:
         if not text.strip():
@@ -112,7 +121,7 @@ class RussianTextNormalizer:
 
         # Если структура текста не сломалась, объединяем умно
         if len(orig_parts) == len(silero_parts):
-            final_parts =[]
+            final_parts = []
             for orig_part, silero_part in zip(orig_parts, silero_parts):
                 # Если пользователь уже поставил + или \u0301, берем его версию
                 if '+' in orig_part or re.search(r'[\u0300-\u036f]', orig_part):
